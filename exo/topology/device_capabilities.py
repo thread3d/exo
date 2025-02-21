@@ -66,6 +66,9 @@ CHIP_FLOPS = {
   "Apple A16 Bionic": DeviceFlops(fp32=1.79*TFLOPS, fp16=3.58*TFLOPS, int8=7.16*TFLOPS),
   "Apple A17 Pro": DeviceFlops(fp32=2.15*TFLOPS, fp16=4.30*TFLOPS, int8=8.60*TFLOPS),
   ### NVIDIA GPUs
+  # Jetson
+  "NVIDIA Jetson AGX Xavier": DeviceFlops(fp32=1.41*TFLOPS, fp16=2.82*TFLOPS, int8=5.64*TFLOPS),
+  "NVIDIA Jetson Nano": DeviceFlops(fp32=0.235*TFLOPS, fp16=0.472*TFLOPS, int8=0.944*TFLOPS),
   # RTX 40 series
   "NVIDIA GEFORCE RTX 4090": DeviceFlops(fp32=82.58*TFLOPS, fp16=165.16*TFLOPS, int8=330.32*TFLOPS),
   "NVIDIA GEFORCE RTX 4080": DeviceFlops(fp32=48.74*TFLOPS, fp16=97.48*TFLOPS, int8=194.96*TFLOPS),
@@ -179,22 +182,24 @@ async def linux_device_capabilities() -> DeviceCapabilities:
 
   if DEBUG >= 2: print(f"tinygrad {Device.DEFAULT=}")
   if Device.DEFAULT == "CUDA" or Device.DEFAULT == "NV" or Device.DEFAULT == "GPU":
-    import pynvml
+  #  import pynvml # This exists on an AGX machine, but doesn't work because...
 
-    pynvml.nvmlInit()
-    handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-    gpu_raw_name = pynvml.nvmlDeviceGetName(handle).upper()
-    gpu_name = gpu_raw_name.rsplit(" ", 1)[0] if gpu_raw_name.endswith("GB") else gpu_raw_name
-    gpu_memory_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+  #  pynvml.nvmlInit()  # This fails when looking for a library "libnvidia-ml.so.1" that doesn't exist on the AGX 
+  #  handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+  #  gpu_raw_name = pynvml.nvmlDeviceGetName(handle).upper()
+  #  gpu_name = gpu_raw_name.rsplit(" ", 1)[0] if gpu_raw_name.endswith("GB") else gpu_raw_name
+  #  gpu_memory_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
 
-    if DEBUG >= 2: print(f"NVIDIA device {gpu_name=} {gpu_memory_info=}")
+  #  if DEBUG >= 2: print(f"NVIDIA device {gpu_name=} {gpu_memory_info=}")
+    gpu_name = "NVIDIA Jetson AGX Xavier"
+    if DEBUG >= 2: print(f"NVIDIA device {gpu_name=}")
 
-    pynvml.nvmlShutdown()
+  #  pynvml.nvmlShutdown()
 
     return DeviceCapabilities(
       model=f"Linux Box ({gpu_name})",
-      chip=gpu_name,
-      memory=gpu_memory_info.total // 2**20,
+      chip=gpu_name,      
+      memory=32768,   # memory=gpu_memory_info.total // 2**20,
       flops=CHIP_FLOPS.get(gpu_name, DeviceFlops(fp32=0, fp16=0, int8=0)),
     )
   elif Device.DEFAULT == "AMD":
