@@ -1,0 +1,9 @@
+#!/bin/bash
+# wrapper: ssh to macpro51 avoiding the broken system ssh config and read-only $HOME
+exec ssh -F /dev/null \
+  -o StrictHostKeyChecking=accept-new \
+  -o UserKnownHostsFile=/home/threaded/projects/macpro51/.ssh_known_hosts \
+  -o ConnectTimeout=15 \
+  -o ServerAliveInterval=30 \
+  -i "$HOME/.ssh/id_ed25519" \
+  threaded@macpro51.local "$@"

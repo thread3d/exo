@@ -236,6 +236,8 @@ extend-exclude = [
   "bench/vendor/**",
   # vendored verbatim, see its header
   "src/exo/worker/engines/mlx/models/deepseek_v4/model.py",
+  # macpro51 branch: session notes and scripts exactly as they were run, not part of the package
+  "macpro51/**",
 ]
 
 [tool.ruff.lint]
