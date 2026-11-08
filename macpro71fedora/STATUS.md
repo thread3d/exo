@@ -357,6 +357,44 @@ scenarios use — and those 23 scenarios do pass here. A node also refuses to st
 holds its PID file (`~/.cache/exo/exo.pid`), so a second local node needs its own
 `XDG_CACHE_HOME`, `XDG_DATA_HOME` and `XDG_CONFIG_HOME`.
 
+## The Jetson AGX Xavier at 192.168.0.81 cannot appear in this node's UI
+
+It is on the same /24 as this machine's `enp3s0` (192.168.0.89) and `enp4s0` (192.168.0.90), and
+the dashboard's topology shows one device because that board is not running this exo at all:
+
+```
+.venv/bin/exo --inference-engine tinygrad --node-id xavieragx \
+  --listen-port 5678 --broadcast-port 5678 --chatgpt-api-port 8000 --disable-tui
+```
+
+- Its API answers on **:8000**, and nothing listens on 52413-52415, the ports this exo uses.
+- Its package is `~/projects/Exo/exo/exo/__init__.py`; this codebase is `src/exo/`. It is the
+  pre-rewrite exo (tinygrad, gRPC over libp2p), git `01cc968` on a `dev` branch.
+- None of those flags exist any more, so nothing about it can answer zenoh discovery. This node
+  therefore reports no devices at all, not even as another build:
+
+```
+$ curl -s localhost:52415/v1/devices-on-other-versions
+{"wireVersion":7,"buildId":"exo 0.3.70, mlx 0.32.4, mlx-lm 0.32.3.dev16+g6b572ab1b","devices":[]}
+```
+
+For a device to appear, it needs the same cluster name, wire version 7, that exact build string,
+and a route to the discovery port.
+
+The board cannot simply be upgraded to this build: it runs Ubuntu 20.04 / JetPack 5, whose glibc
+is **2.31**, while MLX's aarch64 wheels are `manylinux_2_35`; its CUDA is **11.4** where MLX wants
+12 or 13; and its Python is 3.12 where `pyproject.toml` requires 3.13. The Python part is easy
+(`uv python install 3.13` works there); the MLX wheel is the wall.
+
+Two routes would put it in the cluster, both CPU-only because MLX cannot reach that GPU:
+
+1. **A container with a newer userland.** `docker` is installed on the board. An image with
+   glibc >= 2.35 plus uv's CPython 3.13, `mlx-cpu==0.32.4` and `mlx-lm` at the same rev gives a
+   matching build string, and with exo on 52413-52415 it would join and be placed alongside this
+   node. It would run on 8 Carmel cores.
+2. **Build MLX's CPU backend from source** on the board, which also reports version 0.32.4 and so
+   the same build string. Slower to arrange and it may not build with that toolchain.
+
 ## Next steps
 
 1. Consider `mlx-cpu`'s reference-BLAS linkage: a build that binds OpenBLAS instead would lift
