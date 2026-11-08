@@ -283,12 +283,21 @@ package shadows `src/exo/download/tests/` (which pytest names `tests.test_store`
 `src/exo/download/` is a namespace directory), and all eight download test modules fail to collect
 before a single test runs. That happens on `main` here too — `just test` runs `pytest src` for the same reason.
 
-One test is flaky here, and was before this branch touched anything:
-`test_serving.py::test_requests_meanwhile_are_refused_without_being_delivered` fails about a
-third to two thirds of runs, with and without this branch's changes (checked by stashing them).
-It asserts that a rank received a request that the cluster then refused to cancel, and sometimes
-finds the rank's `received` list empty. It is a race in the test's own observation window rather
-than anything about this platform's MLX; it is left alone here.
+One test is flaky here, and was flaky before this branch touched anything:
+`test_serving.py::test_requests_meanwhile_are_refused_without_being_delivered` fails between a
+third and two thirds of runs. Checked by stashing this branch's changes and running it five times
+against the same installed tree: it failed twice there, so it is not this branch's doing. The
+failing assertion is the last line,
+
+```
+assert cluster.ranks[0].received == [first.task.task_id]
+AssertionError: assert [] == ['71c241eb-...']
+```
+
+so the first request was refused before reaching the runner, where the test expects it to have
+been delivered and only its *cancellation* refused. Why is not established here — the harness in
+`serving_cluster.py` and the refusal path in `worker/serving.py` would need reading to say — and
+the test is left as it is rather than changed blind.
 
 Nine model tests used to fail here rather than skip: Muse Spark's and MiniMax M3's blocks call
 mlx-lm's fused `norm_add_norm` kernel, which is Metal-only. They now carry
