@@ -26,9 +26,12 @@ exo's only other engine (`vllm`) targets CUDA. The CPU is therefore the whole st
 
 ## Quick start
 
+`. macpro71fedora/scripts/env.sh` first: it points the build and the node at writable directories
+inside the workspace, since `$HOME` is read-only here, and names the interpreter to build with.
+
 ```bash
 # 1. build the Rust extension and the Python environment (MLX CPU backend)
-uv sync --locked --python 3.13 --extra mlx-cpu
+uv sync --locked --python "$PYTHON" --extra mlx-cpu --all-packages
 
 # 2. build the dashboard (only needed once, and after dashboard changes)
 (cd dashboard && npm install && npm run build)
@@ -49,14 +52,11 @@ curl -X POST http://localhost:52415/v1/chat/completions \
        "max_tokens":16}'
 ```
 
-Two environment caveats apply to this machine specifically, both covered in
-[STATUS.md](STATUS.md#build-environment):
-
-- The interpreter used for the virtualenv must not be a conda one, or the runner subprocess loads
-  conda's `libstdc++.so.6`, which is too old for MLX. Until the virtualenv is rebuilt on a
-  standalone CPython, run with `LD_PRELOAD=/usr/lib64/libstdc++.so.6`.
-- The session sandbox makes `$HOME` read-only, so the `XDG_*` directories exo writes to are
-  pointed inside the workspace by `scripts/env.sh`.
+Build the virtualenv from a standalone CPython (`uv python install 3.13`, which `$PYTHON`
+points at), not from a conda one: conda's interpreter has `DT_RPATH=$ORIGIN/../lib`, which pins
+`libstdc++` to conda's copy — too old for MLX — in any process that loads it, and the runner
+subprocess is such a process. [STATUS.md](STATUS.md#build-environment) has the details, along with
+the sandbox's read-only `$HOME`.
 
 ## Scripts
 

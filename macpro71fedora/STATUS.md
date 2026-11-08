@@ -55,12 +55,21 @@ version `GLIBCXX_3.4.30' not found (required by .../mlx/lib/libmlx.so)
 ```
 
 The node starts fine; only the *runner subprocess* fails, because only it imports MLX. Note that
-`LD_LIBRARY_PATH` does **not** help — `DT_RPATH` wins. Two ways out:
+`LD_LIBRARY_PATH` does **not** help — `DT_RPATH` wins, and only `LD_PRELOAD` of
+`/usr/lib64/libstdc++.so.6` (which satisfies the SONAME first) gets MLX loaded.
 
-- **Workaround (what `scripts/env.sh` does today):**
-  `LD_PRELOAD=/usr/lib64/libstdc++.so.6`, which satisfies the SONAME with the system copy first.
-- **Proper fix:** build the virtualenv from a standalone CPython 3.13 (`uv python install 3.13`)
-  rather than a conda one. Nothing in exo needs to change.
+The fix is to build the virtualenv from a standalone CPython instead. `uv python install 3.13`
+installs one under `$UV_PYTHON_INSTALL_DIR`; `uv sync --python "$PYTHON"` then builds `.venv` on it,
+and MLX resolves `libstdc++` from `/lib64` with no preload at all:
+
+```
+$ uv run --no-sync python -c "import mlx.core; print(open('/proc/self/maps')...)"
+interp: /home/threaded/projects/Exo/exo/.venv/bin/python
+libstdc++: ['/usr/lib64/libstdc++.so.6.0.36']
+```
+
+Nothing in exo needs to change for this; it is a property of the interpreter the venv is built
+from. `scripts/env.sh` now exports `PYTHON` for exactly this reason.
 
 ### 3. `$HOME` is read-only inside the session sandbox
 
@@ -166,7 +175,7 @@ What was actually run on this branch, and what it showed:
 
 ```bash
 # build
-uv sync --locked --python 3.13 --extra mlx-cpu --all-packages   # exo_rs, mlx-cpu 0.32.4, exo_tools
+uv sync --locked --python "$PYTHON" --extra mlx-cpu --all-packages   # exo_rs, mlx-cpu, exo_tools
 (cd dashboard && npm install && npm run build)      # site written to dashboard/build
 
 # node
@@ -207,12 +216,11 @@ Metal while still running them on a Mac.
 
 ## Next steps
 
-1. Rebuild the virtualenv on a standalone CPython 3.13 so `LD_PRELOAD` is not needed.
-2. Consider `mlx-cpu`'s reference-BLAS linkage: a build that binds OpenBLAS instead would lift
+1. Consider `mlx-cpu`'s reference-BLAS linkage: a build that binds OpenBLAS instead would lift
    `float32` matmul by another ~2.7× where it is used.
-3. Multi-device: this is a one-node cluster. A second exo node on the LAN would exercise placement,
+2. Multi-device: this is a one-node cluster. A second exo node on the LAN would exercise placement,
    sharding and the ring transport on Linux for the first time, but every node needs a non-conda
    interpreter before its runners can import MLX.
-4. 4-bit versus 8-bit: 8-bit quantized matmul is 2.7× faster per byte on this backend, so an 8-bit
+3. 4-bit versus 8-bit: 8-bit quantized matmul is 2.7× faster per byte on this backend, so an 8-bit
    card may decode faster than a 4-bit one despite moving twice the bytes. Not yet measured through
    exo end to end.
