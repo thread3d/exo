@@ -275,6 +275,24 @@ mlx-lm's fused `norm_add_norm` kernel, which is Metal-only. They now carry
 `pytest.mark.skipif(not mx.metal.is_available())`, so the suite is green on a machine without
 Metal while still running them on a Mac.
 
+## What the node says about itself
+
+A Linux node used to report `"Unknown Model"`, `"Unknown Chip"`, the OS as just `"Linux"` and the
+build as `"Unknown"`, because all three came from macOS tools (`system_profiler`, `sw_vers`). The
+dashboard therefore could not tell two Linux machines apart. It now reads what Linux has:
+
+```
+modelId       : Apple Inc. MacPro7,1
+chipId        : Intel(R) Xeon(R) W-3275 CPU @ 2.50GHz
+osVersion     : Fedora Linux 44 (KDE Plasma Desktop Edition)
+osBuildVersion: 7.2.15-310.t2.fc44.x86_64
+```
+
+The machine from DMI (`/sys/class/dmi/id/product_name` and `sys_vendor`), the processor from
+`/proc/cpuinfo`, the distribution from `/etc/os-release`'s `PRETTY_NAME`, and the build from the
+kernel release — the part that decides what a build of exo can do. Each read is optional: a file
+that is not there leaves the field as it was, and macOS behaviour is unchanged.
+
 ## What multi-device would need
 
 MLX's ring backend does work across CPU processes here: two processes with `MLX_RANK` 0 and 1 over

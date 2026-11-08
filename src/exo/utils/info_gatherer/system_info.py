@@ -1,32 +1,78 @@
 import platform
 import socket
 import sys
+from pathlib import Path
 from subprocess import CalledProcessError
 
 import psutil
-from anyio import run_process
+from anyio import run_process, to_thread
 
 from exo.shared.types.memory import Memory
 from exo.shared.types.profiling import InterfaceType, NetworkInterfaceInfo
+
+_OS_RELEASE_PATH = Path("/etc/os-release")
+_DMI_PRODUCT_NAME_PATH = Path("/sys/class/dmi/id/product_name")
+_DMI_SYS_VENDOR_PATH = Path("/sys/class/dmi/id/sys_vendor")
+_CPUINFO_PATH = Path("/proc/cpuinfo")
+
+
+def _read_text(path: Path) -> str | None:
+    """A file's contents, or None if it can't be read."""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def _first_line(path: Path) -> str | None:
+    """The first non-empty line of a file."""
+    text = _read_text(path)
+    if text is None:
+        return None
+    return next((line.strip() for line in text.splitlines() if line.strip()), None)
+
+
+def _linux_distribution_name() -> str | None:
+    """The distribution's own name for itself, e.g. "Fedora Linux 44 (KDE Plasma)"."""
+    text = _read_text(_OS_RELEASE_PATH)
+    if text is None:
+        return None
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            values[key.strip()] = value.strip().strip('"')
+    return values.get("PRETTY_NAME") or values.get("NAME") or None
 
 
 def get_os_version() -> str:
     """Return the OS version string for this node.
 
-    On macOS this is the macOS version (e.g. ``"15.3"``).
-    On other platforms it falls back to the platform name (e.g. ``"Linux"``).
+    On macOS this is the macOS version (e.g. ``"15.3"``). On Linux it is the
+    distribution's name (e.g. ``"Fedora Linux 44 (KDE Plasma)"``), which is what a
+    person running two different machines wants to tell apart. Otherwise it falls back
+    to the platform name (e.g. ``"Linux"``).
     """
     if sys.platform == "darwin":
         version = platform.mac_ver()[0]
         return version if version else "Unknown"
+    if sys.platform == "linux":
+        distribution = _linux_distribution_name()
+        if distribution:
+            return distribution
     return platform.system() or "Unknown"
 
 
 async def get_os_build_version() -> str:
-    """Return the macOS build version string (e.g. ``"24D5055b"``).
+    """Return the build identifier of the OS this node runs.
 
-    On non-macOS platforms, returns ``"Unknown"``.
+    On macOS this is the build version (e.g. ``"24D5055b"``). On Linux, whose
+    distributions rebuild independently of a version string, it is the kernel release
+    (e.g. ``"7.2.15-310.t2.fc44.x86_64"``), which is the part that decides what a build
+    of exo can do. Elsewhere it is ``"Unknown"``.
     """
+    if sys.platform == "linux":
+        return platform.release() or "Unknown"
     if sys.platform != "darwin":
         return "Unknown"
 
@@ -132,12 +178,41 @@ async def get_network_interfaces() -> list[NetworkInterfaceInfo]:
     return interfaces_info
 
 
+def _linux_model_and_chip() -> tuple[str, str]:
+    """The machine and the CPU, from DMI and /proc/cpuinfo.
+
+    DMI names the machine as its vendor built it (a Mac Pro 7,1 reports "MacPro7,1" and
+    "Apple Inc."), and /proc/cpuinfo names the CPU. Each is what the dashboard shows for
+    a Mac, so a cluster of mixed machines reads the same way.
+    """
+    model = _first_line(_DMI_PRODUCT_NAME_PATH) or "Unknown Model"
+    vendor = _first_line(_DMI_SYS_VENDOR_PATH)
+    if vendor:
+        model = f"{vendor} {model}"
+
+    chip = "Unknown Chip"
+    cpuinfo = _read_text(_CPUINFO_PATH)
+    if cpuinfo is not None:
+        for line in cpuinfo.splitlines():
+            if line.startswith("model name"):
+                chip = line.partition(":")[2].strip() or chip
+                break
+    return (model, chip)
+
+
 async def get_model_and_chip() -> tuple[str, str]:
-    """Get Mac system information using system_profiler."""
+    """Get this machine's model and processor.
+
+    On macOS, from system_profiler. On Linux, from DMI and /proc/cpuinfo.
+    """
     model = "Unknown Model"
     chip = "Unknown Chip"
 
-    # TODO: better non mac support
+    if sys.platform == "linux":
+        try:
+            return await to_thread.run_sync(_linux_model_and_chip)
+        except (OSError, IndexError, ValueError):
+            return (model, chip)
     if sys.platform != "darwin":
         return (model, chip)
 
