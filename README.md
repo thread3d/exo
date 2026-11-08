@@ -85,6 +85,7 @@ The current recommended way to install exo is from source.
   - NVIDIA driver - verify with `nvidia-smi`
   - CUDA toolkit - install from [NVIDIA CUDA guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#cuda-cross-platform-installation), verify with `nvcc --version`
   - cuDNN library - download from [NVIDIA cuDNN page](https://developer.nvidia.com/cudnn-downloads), verify installation by following [these steps](https://docs.nvidia.com/deeplearning/cudnn/latest/installation/linux.html#verifying-the-install-on-linux:~:text=at%20a%20time.-,Verifying%20the%20Install%20on%20Linux,Test%20passed!,-Upgrading%20From%20Older)
+- On an NVIDIA Jetson (JetPack) several of the checks above do not apply — `nvidia-smi` is not installed and `nvcc` is not needed. See [docs/JETSON.md](docs/JETSON.md).
 
 ### Hardware Requirements
 
@@ -101,9 +102,13 @@ The current recommended way to install exo is from source.
 git clone https://github.com/exo-explore/exo.git
 cd exo
 pip install -e .
-# alternatively, with venv
-source install.sh
+# alternatively, in a venv that install.sh creates and checks for you
+./install.sh
 ```
+
+`install.sh` finds a Python >= 3.12, rebuilds `.venv` when the one it finds is stale or was built by
+another interpreter, and fails with an actionable message instead of half-installing. `source
+install.sh` does the same and leaves the venv activated in your shell.
 
 
 ### Troubleshooting

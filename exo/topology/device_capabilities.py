@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional, Tuple
 from pydantic import BaseModel
 from exo import DEBUG
 import subprocess
@@ -146,6 +146,69 @@ CHIP_FLOPS.update({f"Laptop GPU {key}": value for key, value in CHIP_FLOPS.items
 CHIP_FLOPS.update({f"{key} LAPTOP GPU": value for key, value in CHIP_FLOPS.items()})
 CHIP_FLOPS.update({f"{key} Laptop GPU": value for key, value in CHIP_FLOPS.items()})
 
+### NVIDIA identification
+# A Jetson answers no NVML query: JetPack ships no libnvidia-ml.so.1, and the file
+# under the CUDA toolkit is a link-time stub, so nvmlInit() dies with
+# NVMLError_LibraryNotFound.  The device tree still names the board, which is what
+# the bootloader filled in.
+JETSON_CHIPS = {
+  # /proc/device-tree/compatible token -> name, matching the CHIP_FLOPS keys above
+  "jetson-xavier": "NVIDIA Jetson AGX Xavier",
+  "jetson-nano": "NVIDIA Jetson Nano",
+}
+
+
+def jetson_chip_name() -> Optional[str]:
+  """Name of the Jetson this process runs on, or None on anything else."""
+  try:
+    with open("/proc/device-tree/compatible", "rb") as f:
+      compatible = f.read().decode("utf-8", "replace").split("\0")
+  except OSError:
+    compatible = []
+  for token in compatible:
+    board = token.strip().split(",", 1)[-1]
+    if board in JETSON_CHIPS:
+      return JETSON_CHIPS[board]
+
+  # A Jetson that JETSON_CHIPS does not know yet still says what it is; report that
+  # rather than a name borrowed from a different board.
+  try:
+    with open("/proc/device-tree/model", "rb") as f:
+      model = f.read().decode("utf-8", "replace").strip("\0").strip()
+  except OSError:
+    return None
+  if not model.lower().startswith("jetson"):
+    return None
+  return f"NVIDIA {model.replace('-', ' ')}"
+
+
+def nvidia_chip_name_and_memory() -> Tuple[str, int]:
+  """Chip name and memory in MB for the NVIDIA GPU this process should use."""
+  try:
+    import pynvml
+
+    pynvml.nvmlInit()
+  except Exception as e:
+    if DEBUG >= 2: print(f"NVML unavailable ({e}), asking the device tree instead")
+  else:
+    try:
+      handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+      gpu_raw_name = pynvml.nvmlDeviceGetName(handle).upper()
+      gpu_name = gpu_raw_name.rsplit(" ", 1)[0] if gpu_raw_name.endswith("GB") else gpu_raw_name
+      gpu_memory_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+
+      if DEBUG >= 2: print(f"NVIDIA device {gpu_name=} {gpu_memory_info=}")
+
+      return gpu_name, gpu_memory_info.total // 2**20
+    except Exception as e:
+      if DEBUG >= 2: print(f"NVML query failed ({e}), asking the device tree instead")
+    finally:
+      pynvml.nvmlShutdown()
+
+  # A Jetson's GPU draws on the same DRAM as its CPU, so the memory a model can
+  # be given is the memory the whole machine has.
+  return (jetson_chip_name() or "NVIDIA GPU"), psutil.virtual_memory().total // 2**20
+
 
 async def device_capabilities() -> DeviceCapabilities:
   if psutil.MACOS:
@@ -180,22 +243,14 @@ async def linux_device_capabilities() -> DeviceCapabilities:
 
   if DEBUG >= 2: print(f"tinygrad {Device.DEFAULT=}")
   if Device.DEFAULT == "CUDA" or Device.DEFAULT == "NV" or Device.DEFAULT == "GPU":
-    import pynvml
+    gpu_name, memory = nvidia_chip_name_and_memory()
 
-    pynvml.nvmlInit()
-    handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-    gpu_raw_name = pynvml.nvmlDeviceGetName(handle).upper()
-    gpu_name = gpu_raw_name.rsplit(" ", 1)[0] if gpu_raw_name.endswith("GB") else gpu_raw_name
-    gpu_memory_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-
-    if DEBUG >= 2: print(f"NVIDIA device {gpu_name=} {gpu_memory_info=}")
-
-    pynvml.nvmlShutdown()
+    if DEBUG >= 2: print(f"NVIDIA device {gpu_name=} {memory=}")
 
     return DeviceCapabilities(
       model=f"Linux Box ({gpu_name})",
       chip=gpu_name,
-      memory=gpu_memory_info.total // 2**20,
+      memory=memory,
       flops=CHIP_FLOPS.get(gpu_name, DeviceFlops(fp32=0, fp16=0, int8=0)),
     )
   elif Device.DEFAULT == "AMD":

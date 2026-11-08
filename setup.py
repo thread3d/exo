@@ -34,6 +34,10 @@ install_requires = [
 
 extras_require = {
   "formatting": ["yapf==0.40.2",],
+  "test": [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+  ],
   "apple_silicon": [
     "mlx==0.22.0",
     "mlx-lm==0.21.1",
@@ -52,28 +56,31 @@ if sys.platform.startswith("win32"):
   install_requires.extend(extras_require["windows"])
 
 
+def _probe_succeeded(args: list) -> bool:
+  """True when a GPU query tool is present and answers successfully.
+
+  A missing tool raises OSError here because these are run without a shell; a
+  tool that runs but does not understand the flags answers with a non-zero
+  status.  Both mean "no such GPU".
+  """
+  try:
+    return subprocess.run(args, text=True, capture_output=True, check=False).returncode == 0
+  except OSError:
+    return False
+
+
 def _add_gpu_requires():
   global install_requires
   # Add Nvidia-GPU
-  try:
-    out = subprocess.run(['nvidia-smi', '--query-gpu=name', '--format=csv,noheader'], shell=True, text=True, capture_output=True, check=False)
-    if out.returncode == 0:
-      install_requires.extend(extras_require["nvidia-gpu"])
-  except subprocess.CalledProcessError:
-    pass
+  if _probe_succeeded(['nvidia-smi', '--query-gpu=name', '--format=csv,noheader']):
+    install_requires.extend(extras_require["nvidia-gpu"])
 
   # Add AMD-GPU
   # This will mostly work only on Linux, amd/rocm-smi is not yet supported on Windows
-  try:
-    out = subprocess.run(['amd-smi', 'list', '--csv'], shell=True, text=True, capture_output=True, check=False)
-    if out.returncode == 0:
+  for probe in (['amd-smi', 'list', '--csv'], ['rocm-smi', 'list', '--csv']):
+    if _probe_succeeded(probe):
       install_requires.extend(extras_require["amd-gpu"])
-  except:
-    out = subprocess.run(['rocm-smi', 'list', '--csv'], shell=True, text=True, capture_output=True, check=False)
-    if out.returncode == 0:
-      install_requires.extend(extras_require["amd-gpu"])
-  finally:
-    pass
+      break
 
 
 _add_gpu_requires()
