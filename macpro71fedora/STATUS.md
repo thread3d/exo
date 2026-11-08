@@ -8,22 +8,28 @@ node and the benchmark both running on the CPU.
 - RAM: 251 GiB
 - GPU: 2 × Radeon Pro W6800X, 1 × Radeon Pro Vega II; ROCm 7.1.1 runtime + OMP installed,
   no `hipcc` (no HIP compiler)
-- Python: 3.13.9; exo: 0.3.70, wire version 7; MLX: `mlx-cpu` 0.32.4
+- Python: 3.13.17 (uv's own CPython; see "Build environment"); exo: 0.3.70, wire version 7;
+  MLX: `mlx-cpu` 0.32.4
 
 ## Result
 
 exo builds and runs on this machine as a **single-node cluster on the CPU**:
 
-- `uv sync --locked --python 3.13 --extra mlx-cpu` builds `exo_rs` (maturin) and installs MLX's
-  Linux CPU wheel. `dashboard` builds with `npm install && npm run build`.
+- `uv sync --locked --python "$PYTHON" --extra mlx-cpu --all-packages` builds `exo_rs` (maturin)
+  and installs MLX's Linux CPU wheel. The dashboard builds with `npm install && npm run build`.
 - A node reaches master election, serves the dashboard and 56 API paths on port 52415, and lists
   158 model cards for its `MlxCpu` backend.
 - `POST /place_instance` downloads a model, starts a runner, loads it, warms it up, and the
   instance serves.
-- `POST /v1/chat/completions` returns a real completion (reasoning tokens included) from the
-  model. A 16-token reply to a one-line prompt took 138 s.
+- `POST /v1/chat/completions` returns a real completion (reasoning tokens included). A 16-token
+  reply to a one-line prompt takes 20.8 s, and the dashboard's chat works the same way.
+- Both 4-bit and 8-bit Qwen3-0.6B serve, and so does Llama-3.2-1B: nothing here is Qwen-specific.
+- All 60 cluster scenarios pass, so the multi-process side of exo works on Linux too.
 
-Two things block *usable* inference, and both are understood — see the next sections.
+What limits it is MLX's x86 CPU backend, not exo: it computes in one thread and emulates 16-bit
+floats. exo now loads models for a CPU in `float32`, which is 8× faster than the `float16` MLX
+hands over, and that is the whole of the tuning available without changing MLX. The sections
+below give the measurements.
 
 ## Build environment
 
@@ -274,6 +280,16 @@ Nine model tests used to fail here rather than skip: Muse Spark's and MiniMax M3
 mlx-lm's fused `norm_add_norm` kernel, which is Metal-only. They now carry
 `pytest.mark.skipif(not mx.metal.is_available())`, so the suite is green on a machine without
 Metal while still running them on a Mac.
+
+Image models are not available here, and exo says so rather than failing later: every image card
+declares `backends = ["MlxMetal"]` (they run through mflux, on MLX's GPU path), so placement
+refuses with
+
+```
+No cycle where every node supports a backend in ['MlxMetal'] for exolabs/FLUX.1-dev-4bit
+```
+
+Which is the right answer on a machine whose only backend is `MlxCpu`.
 
 ## What the node says about itself
 
