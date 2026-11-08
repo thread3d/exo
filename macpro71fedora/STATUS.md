@@ -200,6 +200,15 @@ Three AMD GPUs and a ROCm 7.1.1 runtime are present, but:
 An engine that could use these GPUs (llama.cpp with Vulkan or HIP, for instance) would be a new
 engine in `src/exo/worker/engines/`, not a configuration change.
 
+One thing worth knowing before giving up on the GPUs: `mlx-rocm` on PyPI (0.1.2, uploaded
+2026-10-30) is a third-party, self-described pre-alpha ROCm backend for MLX — a vendored ROCm
+backend tree plus hipBLASLt GEMM and QMV decode kernels, "validated on AMD RDNA4 (gfx1201)". It
+does not fit here: this machine's cards are RDNA2 (gfx1030, the two W6800X) and Vega 20 (gfx906),
+neither of which is what it was validated on, and it needs the HIP compiler and hipBLASLt, which
+this install of ROCm (runtime and OpenMP only) does not have. Reaching the GPUs from exo remains a
+project: a working MLX ROCm build for these chips, then exo's `MlxCuda`-shaped backend path taught
+to recognise it.
+
 ## The node serves every API exo advertises
 
 The dashboard renders with no console errors, and every request shape below returned real
