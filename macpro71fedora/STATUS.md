@@ -209,6 +209,14 @@ completions from the 0.6B model on the CPU:
 
 ![The dashboard on this machine](imgs/dashboard.png)
 
+The dashboard's own chat works too — the browser sends the same request the API takes, and the
+reply arrives with exo's figures for it:
+
+![A conversation in the dashboard](imgs/dashboard-chat.png)
+
+A second architecture serves as well: `mlx-community/Llama-3.2-1B-Instruct-4bit` loads and answers
+at 1188 ms/token, so this is not Qwen-specific.
+
 Decode through exo costs 651 ms/token where the model alone costs 450 ms, so about 45% of the time
 is exo's per-step machinery on a CPU this slow — sampling, cache handling, IPC and streaming.
 
@@ -235,16 +243,18 @@ curl -X POST localhost:52415/place_instance -d '{"model_id":"mlx-community/Qwen3
 curl -X POST localhost:52415/v1/chat/completions -d '{...}'    # real completion, 16 tokens/20.8 s
 
 # checks
-uv run pytest src/exo/testkit -m "cluster and not slow"   # 23 passed: real nodes on this machine
+uv run pytest src/exo/testkit -m "cluster and not slow"   # 23 passed, 12.5 min
+uv run pytest src/exo/testkit -m "cluster and slow"       # 37 passed, 27 min
 uv run basedpyright                                 # 0 errors
 uv run ruff check                                   # clean
 uv run ruff format --check                          # clean
 uv run pytest src                                   # the suite
 ```
 
-The cluster scenarios are worth calling out: 23 of them start real exo nodes on this machine (a
-stub engine stands in for MLX), so election, placement, request routing, cancellation, departures
-and restarts are all exercised on Linux. They pass in 12.5 minutes.
+The cluster scenarios are worth calling out: all 60 of them (23 fast, 37 slow, about 40 minutes
+together) start real exo nodes on this machine — a stub engine stands in for MLX — so election,
+placement, request routing, cancellation, departures, restarts and the data plane are exercised on
+Linux, and they pass.
 
 `--all-packages` matters: without it `exo_tools` is missing and `tests/conftest.py` cannot import.
 

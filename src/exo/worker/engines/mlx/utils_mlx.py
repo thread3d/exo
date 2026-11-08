@@ -275,8 +275,9 @@ def cast_to_compute_dtype(model: nn.Module) -> None:
     if loaded_dtype == compute_dtype:
         return
     logger.info(
-        f"Computing in {compute_dtype} rather than {loaded_dtype}: MLX emulates float16 "
-        "arithmetic on this backend"
+        f"Computing in {compute_dtype} rather than {loaded_dtype}: a 16-bit float is not "
+        "native on this backend, so the arithmetic around the quantized weights is faster "
+        "in 32 bits"
     )
     model.set_dtype(compute_dtype)
     mx.eval(model.parameters())
