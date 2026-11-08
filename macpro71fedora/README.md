@@ -69,6 +69,8 @@ the sandbox's read-only `$HOME`.
 | `scripts/bench-primitives.py` | Times the MLX primitives decode is built from, per dtype. |
 | `scripts/bench-model.py` | Times a whole model's forward pass and decode steps. |
 
+![exo's dashboard on this machine: one node, two models ready, 158 models to choose from](imgs/dashboard.png)
+
 ## Where the work stands
 
 `STATUS.md` has the session record: what was changed, every number quoted here, the root causes

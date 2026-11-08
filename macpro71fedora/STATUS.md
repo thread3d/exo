@@ -156,6 +156,31 @@ Measured through exo, before and after:
 | Runner init (load + warmup) | 329 s | 42.5 s |
 | `POST /v1/chat/completions`, 16 tokens | 138 s | 20.8 s |
 
+### Prefill costs what decode costs, per token
+
+A prompt is not processed as a batch. With float32 activations, each token of the prompt costs
+what a decode step costs, at every length measured:
+
+| Prompt | Time | Per token |
+|---|---|---|
+| 8 tokens | 3.6 s | 449 ms |
+| 32 tokens | 14.3 s | 447 ms |
+| 128 tokens | 58.3 s | 456 ms |
+| 512 tokens | 253.5 s | 495 ms |
+
+512 tokens is not one GEMM that reads the weights once, it is 512 passes over all 343 MB of them.
+The quantized kernel re-reads the weights for every row instead of reusing them across the batch,
+which is why a long prompt costs minutes on a model whose weights fit in a third of a gigabyte.
+Anything with a large system prompt — an agent, a long chat, a tool-heavy request — pays for it.
+
+### BLAS is not the lever
+
+Preloading Fedora's FlexiBLAS in front of the bundled Netlib reference BLAS, with OpenMP enabled
+and 32 threads, moves `float32` matmul from 3.5 to 9.5 GFLOP/s. numpy on the same machine, over
+its own OpenBLAS, does 1383. So the CPU backend is not waiting on BLAS thread count: ~145× is lost
+somewhere inside MLX's x86 CPU kernels, and no environment change recovers it. Lifting it means
+changing MLX, not exo.
+
 ### The GPU is not reachable from exo today
 
 Three AMD GPUs and a ROCm 7.1.1 runtime are present, but:
@@ -168,6 +193,27 @@ Three AMD GPUs and a ROCm 7.1.1 runtime are present, but:
 
 An engine that could use these GPUs (llama.cpp with Vulkan or HIP, for instance) would be a new
 engine in `src/exo/worker/engines/`, not a configuration change.
+
+## The node serves every API exo advertises
+
+The dashboard renders with no console errors, and every request shape below returned real
+completions from the 0.6B model on the CPU:
+
+| Surface | Result |
+|---|---|
+| `GET /models` | 158 cards for `MlxCpu` |
+| `POST /v1/chat/completions` (non-streaming) | 16 tokens in 20.8 s |
+| `POST /v1/chat/completions` (streaming) | first token at 6.0 s (the 14-token prompt at ~450 ms/token), then 651 ms/token |
+| `POST /v1/messages` (Anthropic shape) | thinking block + text block, `stop_reason: max_tokens` |
+| `GET /ollama/api/tags` | model list |
+
+![The dashboard on this machine](imgs/dashboard.png)
+
+Decode through exo costs 651 ms/token where the model alone costs 450 ms, so about 45% of the time
+is exo's per-step machinery on a CPU this slow — sampling, cache handling, IPC and streaming.
+
+4-bit and 8-bit of the same model finish together (32 tokens: 29.1 s against 28.2 s), so the 8-bit
+kernel's better bytes-per-second does not survive to the model level.
 
 ## Verification
 
@@ -189,11 +235,16 @@ curl -X POST localhost:52415/place_instance -d '{"model_id":"mlx-community/Qwen3
 curl -X POST localhost:52415/v1/chat/completions -d '{...}'    # real completion, 16 tokens/20.8 s
 
 # checks
+uv run pytest src/exo/testkit -m "cluster and not slow"   # 23 passed: real nodes on this machine
 uv run basedpyright                                 # 0 errors
 uv run ruff check                                   # clean
 uv run ruff format --check                          # clean
 uv run pytest src                                   # the suite
 ```
+
+The cluster scenarios are worth calling out: 23 of them start real exo nodes on this machine (a
+stub engine stands in for MLX), so election, placement, request routing, cancellation, departures
+and restarts are all exercised on Linux. They pass in 12.5 minutes.
 
 `--all-packages` matters: without it `exo_tools` is missing and `tests/conftest.py` cannot import.
 

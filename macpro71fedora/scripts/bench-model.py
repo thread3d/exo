@@ -12,12 +12,14 @@ import argparse
 import time
 
 import mlx.core as mx
+import mlx.nn as nn
 from mlx_lm import load
 from mlx_lm.models.cache import make_prompt_cache
 
 PROMPT_TOKENS = [[1, 2, 3, 4, 5, 6, 7, 8]]
 DECODE_TOKEN = [[1]]
 DECODE_STEPS = 3
+PREFILL_TOKENS = (8, 32, 128)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -59,6 +61,27 @@ def main() -> None:
         mx.eval(inner(mx.array(DECODE_TOKEN), cache))
     per_token = (time.perf_counter() - start) / DECODE_STEPS
     print(f"decode ({arguments.dtype}): {per_token * 1e3:.0f} ms/token")
+
+    report_prefill(model, inner, arguments.dtype)
+
+
+def report_prefill(model: nn.Module, inner: nn.Module, dtype: str) -> None:
+    """How prefill scales with prompt length.
+
+    On MLX's x86 CPU backend it does not scale at all: each token of the prompt costs what a
+    decode step costs, because the quantized matmul re-reads the weights for every row instead
+    of reusing them across the batch.
+    """
+    print(f"prefill ({dtype}):")
+    for length in PREFILL_TOKENS:
+        ids = mx.array([list(range(1, length + 1))])
+        start = time.perf_counter()
+        mx.eval(inner(ids, make_prompt_cache(model)))
+        seconds = time.perf_counter() - start
+        print(
+            f"  {length:5d} tokens: {seconds * 1e3:9.1f} ms  "
+            f"({seconds / length * 1e3:6.1f} ms/token)"
+        )
 
 
 if __name__ == "__main__":
