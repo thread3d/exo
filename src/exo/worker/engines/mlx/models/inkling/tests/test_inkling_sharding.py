@@ -94,7 +94,7 @@ def _quantized_model() -> Model:
     them; attention stays in float32."""
     mx.random.seed(5)
     model = Model(_QUANTIZED_ARGS)
-    model.set_dtype(mx.float32)  # pyright: ignore[reportUnknownMemberType]
+    model.set_dtype(mx.float32)
     nn.quantize(
         model,
         group_size=32,

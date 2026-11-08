@@ -224,6 +224,75 @@ def initialize_mlx(
     return mlx_distributed_init(bound_instance)
 
 
+# Which dtype a CPU-only backend computes in. MLX emulates float16 arithmetic where the machine
+# has no native float16 (its x86 CPU kernels do it in scalar code), and every model card loads
+# with float16 activations, so on a CPU the ops that aren't quantized matmuls all take that path:
+# on a Xeon W-3275 float16 moved 0.7 GB/s against 22 GB/s for float32, and casting a 4-bit 0.6B
+# model to float32 took decode from 3559 ms/token to 441. A backend with a GPU keeps the
+# checkpoint's own dtype, since a GPU has real float16.
+CPU_DTYPE_ENV = "EXO_CPU_DTYPE"
+_CPU_DTYPE_NAMES: Mapping[str, mx.Dtype] = {
+    "float32": mx.float32,
+    "fp32": mx.float32,
+    "float16": mx.float16,
+    "fp16": mx.float16,
+    "bfloat16": mx.bfloat16,
+    "bf16": mx.bfloat16,
+}
+
+
+def cpu_compute_dtype() -> mx.Dtype | None:
+    """The dtype a CPU-only backend should compute in, or None to keep the checkpoint's.
+
+    `EXO_CPU_DTYPE` overrides the choice with one of float32, float16 or bfloat16.
+    """
+    override = os.environ.get(CPU_DTYPE_ENV, None)
+    if override is not None:
+        requested = _CPU_DTYPE_NAMES.get(override.strip().lower(), None)
+        if requested is None:
+            logger.warning(
+                f"Ignoring {CPU_DTYPE_ENV}={override!r}: expected one of "
+                f"{', '.join(sorted(_CPU_DTYPE_NAMES))}"
+            )
+        else:
+            return requested
+    if mx.default_device() != mx.cpu:
+        return None
+    return mx.float32
+
+
+def cast_to_compute_dtype(model: nn.Module) -> None:
+    """Move a loaded model's floating parameters to the dtype this backend computes in.
+
+    Widening float16 scales and weights to float32 loses nothing: the stored values are
+    unchanged, only the arithmetic around them gets a native path. Quantized weights are
+    integers and are left alone, so this costs a fraction of a bit per parameter.
+    """
+    compute_dtype = cpu_compute_dtype()
+    if compute_dtype is None:
+        return
+    loaded_dtype = _first_floating_dtype(model)
+    if loaded_dtype == compute_dtype:
+        return
+    logger.info(
+        f"Computing in {compute_dtype} rather than {loaded_dtype}: MLX emulates float16 "
+        "arithmetic on this backend"
+    )
+    model.set_dtype(compute_dtype)
+    mx.eval(model.parameters())
+
+
+def _first_floating_dtype(model: nn.Module) -> mx.Dtype | None:
+    """The dtype of the model's first floating parameter, which is what it computes in."""
+    flattened = cast("list[tuple[str, object]]", tree_flatten(model.parameters()))
+    for _, parameter in flattened:
+        if isinstance(parameter, mx.array) and mx.issubdtype(
+            parameter.dtype, mx.floating
+        ):
+            return parameter.dtype
+    return None
+
+
 def load_mlx_items(
     bound_instance: BoundInstance,
     group: mx.distributed.Group | None,
@@ -266,6 +335,8 @@ def load_mlx_items(
         logger.info(
             f"Time taken to shard and load model: {(end_time - start_time):.2f}s"
         )
+
+    cast_to_compute_dtype(model)
 
     mx.clear_cache()
 

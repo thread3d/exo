@@ -86,7 +86,7 @@ def test_float32_weights_give_mlx_lm_outputs() -> None:
 def test_bf16_mixer_rounds_only_for_out_proj() -> None:
     mx.random.seed(5)
     model = Model(ModelArgs.from_dict(CONFIG))
-    model.set_dtype(mx.bfloat16)  # pyright: ignore[reportUnknownMemberType]
+    model.set_dtype(mx.bfloat16)
     mixer = next(
         layer.mixer
         for layer in model.layers

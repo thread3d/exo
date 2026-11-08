@@ -6,7 +6,8 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./env.sh
 . "$SCRIPT_DIR/env.sh"
-. "$SCRIPT_DIR/stop-node.sh" >/dev/null 2>&1
+# As a separate process: sourcing would inherit the `exit` that ends it.
+"$SCRIPT_DIR/stop-node.sh" >/dev/null 2>&1
 
 cd "$REPO_ROOT" || exit 1
 nohup "$UV" run --no-sync exo "$@" > "$LOG_DIR/exo.log" 2>&1 &

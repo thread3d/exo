@@ -135,6 +135,18 @@ Same model, same node, only the parameters' dtype changed:
 dtype), and everything around them — attention, norms, activations, the logits pass — moves to the
 path where MLX's x86 backend is not being emulated.
 
+exo now does this itself: `cast_to_compute_dtype` in `src/exo/worker/engines/mlx/utils_mlx.py`
+widens a loaded model's floating parameters when the compute device is the CPU, and leaves them
+alone when there is a GPU (`float16` is right there). `EXO_CPU_DTYPE` overrides the choice with
+`float32`, `float16` or `bfloat16`.
+
+Measured through exo, before and after:
+
+| | before | after |
+|---|---|---|
+| Runner init (load + warmup) | 329 s | 42.5 s |
+| `POST /v1/chat/completions`, 16 tokens | 138 s | 20.8 s |
+
 ### The GPU is not reachable from exo today
 
 Three AMD GPUs and a ROCm 7.1.1 runtime are present, but:
@@ -154,7 +166,7 @@ What was actually run on this branch, and what it showed:
 
 ```bash
 # build
-uv sync --locked --python 3.13 --extra mlx-cpu      # exo_rs builds, mlx-cpu 0.32.4 installs
+uv sync --locked --python 3.13 --extra mlx-cpu --all-packages   # exo_rs, mlx-cpu 0.32.4, exo_tools
 (cd dashboard && npm install && npm run build)      # site written to dashboard/build
 
 # node
@@ -165,17 +177,42 @@ curl -s localhost:52415/models | jq '.data | length'           # 158 cards for M
 # inference
 curl -X POST localhost:52415/place_instance -d '{"model_id":"mlx-community/Qwen3-0.6B-4bit"}'
 #   -> download 343 MB, runner load + warmup, "runner ready"
-curl -X POST localhost:52415/v1/chat/completions -d '{...}'    # real completion, 16 tokens/138 s
+curl -X POST localhost:52415/v1/chat/completions -d '{...}'    # real completion, 16 tokens/20.8 s
+
+# checks
+uv run basedpyright                                 # 0 errors
+uv run ruff check                                   # clean
+uv run ruff format --check                          # clean
+uv run pytest src                                   # the suite
 ```
+
+`--all-packages` matters: without it `exo_tools` is missing and `tests/conftest.py` cannot import.
+
+Run the suite as `pytest src`, not plain `pytest`. In the plain form the repository's root `tests/`
+package shadows `src/exo/download/tests/` (which pytest names `tests.test_store`, because
+`src/exo/download/` is a namespace directory), and all eight download test modules fail to collect
+before a single test runs. That happens on `main` here too — `just test` runs `pytest src` for the same reason.
+
+One test is flaky here, and was before this branch touched anything:
+`test_serving.py::test_requests_meanwhile_are_refused_without_being_delivered` fails about a
+third to two thirds of runs, with and without this branch's changes (checked by stashing them).
+It asserts that a rank received a request that the cluster then refused to cancel, and sometimes
+finds the rank's `received` list empty. It is a race in the test's own observation window rather
+than anything about this platform's MLX; it is left alone here.
+
+Nine model tests used to fail here rather than skip: Muse Spark's and MiniMax M3's blocks call
+mlx-lm's fused `norm_add_norm` kernel, which is Metal-only. They now carry
+`pytest.mark.skipif(not mx.metal.is_available())`, so the suite is green on a machine without
+Metal while still running them on a Mac.
 
 ## Next steps
 
-1. Make the `MlxCpu` backend load models with `float32` activations. Measured 8.1× on the same
-   model; it is the single biggest lever on this machine, and it is a change to exo rather than to
-   MLX. `src/exo/worker/engines/mlx/` owns model loading (`load_mlx_items`).
-2. Rebuild the virtualenv on a standalone CPython 3.13 so `LD_PRELOAD` is not needed.
-3. Consider `mlx-cpu`'s reference-BLAS linkage: a build that binds OpenBLAS instead would lift
+1. Rebuild the virtualenv on a standalone CPython 3.13 so `LD_PRELOAD` is not needed.
+2. Consider `mlx-cpu`'s reference-BLAS linkage: a build that binds OpenBLAS instead would lift
    `float32` matmul by another ~2.7× where it is used.
-4. Multi-device: this is a one-node cluster. A second exo node on the LAN would exercise placement,
+3. Multi-device: this is a one-node cluster. A second exo node on the LAN would exercise placement,
    sharding and the ring transport on Linux for the first time, but every node needs a non-conda
    interpreter before its runners can import MLX.
+4. 4-bit versus 8-bit: 8-bit quantized matmul is 2.7× faster per byte on this backend, so an 8-bit
+   card may decode faster than a 4-bit one despite moving twice the bytes. Not yet measured through
+   exo end to end.

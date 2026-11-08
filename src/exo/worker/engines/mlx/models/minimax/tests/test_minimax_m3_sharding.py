@@ -222,6 +222,9 @@ def test_tensor_split_matches_a_single_device(base_port: int) -> None:
 
 
 @pytest.mark.parametrize("base_port", [29760])
+@pytest.mark.skipif(
+    not mx.metal.is_available(), reason="mlx-lm's fused norm kernels are Metal-only"
+)
 def test_tensor_split_of_nvfp4_experts_matches_a_single_device(base_port: int) -> None:
     """Each expert's nvfp4 tensor scale stays with every rank: split along the experts,
     rank 1 would scale its experts with the wrong expert's scales (or run out of them)."""

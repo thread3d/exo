@@ -385,7 +385,7 @@ class Module(dict):
 
     def set_dtype(
         self, dtype: mx.Dtype, predicate: Optional[Callable[[mx.Dtype], bool]] = ...
-    ):  # -> None:
+    ) -> Module:
         """Set the dtype of the module's parameters.
 
         Args:

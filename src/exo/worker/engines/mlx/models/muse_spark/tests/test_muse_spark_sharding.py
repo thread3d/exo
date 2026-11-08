@@ -39,6 +39,11 @@ from exo.worker.engines.mlx.models.muse_spark.sharding import (
 )
 from exo.worker.engines.mlx.sharding.blocks import LayerCallable
 
+# Muse Spark's blocks reach mlx-lm's fused norm_add_norm kernel, which is a Metal kernel.
+pytestmark = pytest.mark.skipif(
+    not mx.metal.is_available(), reason="mlx-lm's fused norm kernels are Metal-only"
+)
+
 _LAYER_TYPES = [
     "sliding_attention",
     "full_attention",

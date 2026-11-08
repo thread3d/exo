@@ -73,7 +73,7 @@ def tiny_model(seed: int = 0) -> Model:
             scale = value.shape[-1] ** -0.5 if value.ndim >= 2 else 1.0
             params.append((name, scale * mx.random.normal(value.shape)))
     model.load_weights(params)
-    model.set_dtype(mx.float32)  # pyright: ignore[reportUnknownMemberType]
+    model.set_dtype(mx.float32)
     mx.eval(model.parameters())
     return model
 
@@ -277,7 +277,7 @@ def test_quantized_experts_compute_what_their_dequantized_weights_do() -> None:
     args = ModelArgs(model_type="inkling_mm_model", text_config=_QUANTIZABLE_CONFIG)
     mx.random.seed(3)
     quantized = Model(args)
-    quantized.set_dtype(mx.float32)  # pyright: ignore[reportUnknownMemberType]
+    quantized.set_dtype(mx.float32)
     nn.quantize(
         quantized,
         group_size=32,
@@ -306,7 +306,7 @@ def test_quantized_experts_compute_what_their_dequantized_weights_do() -> None:
         dequantized_weights.append((name, value))
     dequantized = Model(args)
     dequantized.load_weights(dequantized_weights, strict=True)
-    dequantized.set_dtype(mx.float32)  # pyright: ignore[reportUnknownMemberType]
+    dequantized.set_dtype(mx.float32)
     tokens = mx.array(_SEQUENCE)[None]
     np.testing.assert_allclose(
         np.array(quantized(tokens)), np.array(dequantized(tokens)), rtol=1e-4, atol=1e-4

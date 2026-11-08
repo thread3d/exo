@@ -6,9 +6,9 @@ what the numbers are. The short version:
 - exo **builds and runs** here: one node, master + worker, the dashboard and API on
   `http://localhost:52415`, and the OpenAI-compatible endpoints.
 - exo **runs models** here through MLX's Linux CPU backend (`exo[mlx-cpu]`), on the CPU only.
-- Inference is **correct but slow**: 0.24 tok/s for a 0.6B 4-bit model as loaded, and 8× that
-  (2.3 tok/s) when the same model's activations are `float32`, which is what MLX's x86 CPU
-  backend prefers. See [STATUS.md](STATUS.md#inference-speed).
+- Inference is **correct but slow**: 2.3 tok/s decode for a 0.6B 4-bit model. exo loads models for
+  a CPU in `float32`, which MLX's x86 backend prefers — `float16` is emulated there and made the
+  same model 8× slower. See [STATUS.md](STATUS.md#inference-speed).
 
 The machine has three AMD GPUs, and exo cannot use any of them: MLX has no ROCm backend, and
 exo's only other engine (`vllm`) targets CUDA. The CPU is therefore the whole story here.
