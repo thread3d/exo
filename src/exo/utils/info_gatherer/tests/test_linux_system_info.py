@@ -50,7 +50,9 @@ def linux_files(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 async def test_the_distribution_names_the_os(linux_files: Path) -> None:
-    assert system_info.get_os_version() == "Fedora Linux 44 (KDE Plasma Desktop Edition)"
+    assert (
+        system_info.get_os_version() == "Fedora Linux 44 (KDE Plasma Desktop Edition)"
+    )
 
 
 async def test_a_distribution_without_a_pretty_name_still_names_itself(
