@@ -265,6 +265,31 @@ mlx-lm's fused `norm_add_norm` kernel, which is Metal-only. They now carry
 `pytest.mark.skipif(not mx.metal.is_available())`, so the suite is green on a machine without
 Metal while still running them on a Mac.
 
+## What multi-device would need
+
+MLX's ring backend does work across CPU processes here: two processes with `MLX_RANK` 0 and 1 over
+a hostfile of `[["127.0.0.1:29500"], ["127.0.0.1:29501"]]` agree on `all_sum` = 3.0. So the
+distributed arithmetic exo shards with is available on Linux CPU.
+
+Two nodes on *one machine* still cannot form a data cluster, and this is by design rather than a
+Linux gap. Both nodes start, find each other, elect one master and follow it — but `place_instance`
+then refuses a two-node request with
+
+```
+Needs 2 connected nodes, but at most 1 are connected to each other
+```
+
+because placement works from topology edges, and a node creates an edge by reaching a peer's API
+at **its own** `api_port` (`Worker._poll_connection_updates` → `check_reachable`). On shared
+hardware that port on the peer's address is this node's own listener, so no edge is ever created.
+The testkit exists for exactly this reason (`exo/testkit/node.py` notes that exo "assumes every node
+serves its API at the same port" and stands a per-pair proxy in front of each one).
+
+So testing multi-device behaviour for real means two machines, or the simulated network the cluster
+scenarios use — and those 23 scenarios do pass here. A node also refuses to start while another
+holds its PID file (`~/.cache/exo/exo.pid`), so a second local node needs its own
+`XDG_CACHE_HOME`, `XDG_DATA_HOME` and `XDG_CONFIG_HOME`.
+
 ## Next steps
 
 1. Consider `mlx-cpu`'s reference-BLAS linkage: a build that binds OpenBLAS instead would lift

@@ -295,7 +295,7 @@ uv run exo
 
 This starts the exo dashboard and API at http://localhost:52415/
 
-**Important note for Linux users:** Currently, exo runs on CPU on Linux. GPU support for Linux platforms is under development. If you'd like to see support for your specific Linux hardware, please [search for existing feature requests](https://github.com/exo-explore/exo/issues) or create a new one.
+**Important note for Linux users:** Currently, exo runs on CPU on Linux, and MLX's CPU backend is slow: a 4-bit 0.6B model decodes in about half a second per token on a Xeon W-3275, and prompt tokens cost the same as generated ones. See `macpro71fedora/STATUS.md` for what was measured and why. GPU support for Linux platforms is under development. If you'd like to see support for your specific Linux hardware, please [search for existing feature requests](https://github.com/exo-explore/exo/issues) or create a new one.
 
 **Configuration Options:**
 
@@ -370,6 +370,7 @@ exo supports several environment variables for configuration:
 | `EXO_ZENOH_NAMESPACE` | Custom namespace for cluster isolation (same as `--namespace`) | exo version |
 | `EXO_FAST_SYNCH` | Control MLX_METAL_FAST_SYNCH behavior (for JACCL backend) | Auto |
 | `EXO_TRACING_ENABLED` | Enable distributed tracing for performance analysis | `false` |
+| `EXO_CPU_DTYPE` | The dtype a CPU-only MLX backend computes in: `float32`, `float16` or `bfloat16`. MLX emulates float16 arithmetic where the machine has no native float16 (its x86 CPU kernels do), and models load with float16 activations, so `float32` decodes several times faster on such a machine. Ignored when MLX computes on a GPU. | `float32` on a CPU, the checkpoint's dtype on a GPU |
 
 **Example usage:**
 
