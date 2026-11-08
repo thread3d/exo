@@ -12,6 +12,10 @@ Apple Silicon MacOS
 
 ## Tier 3 support - minimal support and testing, but no theoretical reason it shouldnt work
 
+Linux CPU Support (x86_64)
+- Mac Pro 7,1 running Fedora 44, via MLX's CPU backend (`exo[mlx-cpu]`): one node serves the
+  dashboard, the API and real completions. Slow - MLX's x86 CPU backend does not use BLAS for
+  fp16, and emulates fp16 arithmetic - see `macpro71fedora/STATUS.md` for the measurements.
 
 # Planned
 
