@@ -229,6 +229,11 @@ reply arrives with exo's figures for it:
 
 ![A conversation in the dashboard](imgs/dashboard-chat.png)
 
+Every page of the dashboard loads with no console errors — home, downloads and integrations —
+and the downloads page names this device and what it holds:
+
+![The dashboard's downloads page](imgs/dashboard-downloads.png)
+
 A second architecture serves as well: `mlx-community/Llama-3.2-1B-Instruct-4bit` loads and answers
 at 1188 ms/token, so this is not Qwen-specific.
 
